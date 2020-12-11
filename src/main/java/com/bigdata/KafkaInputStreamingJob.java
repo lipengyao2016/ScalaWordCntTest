@@ -26,10 +26,8 @@ import org.apache.flink.api.common.serialization.SimpleStringSchema;
 import org.apache.flink.api.java.io.TextInputFormat;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.core.fs.Path;
-import org.apache.flink.streaming.api.datastream.DataStream;
-import org.apache.flink.streaming.api.datastream.DataStreamSource;
-import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
-import org.apache.flink.streaming.api.datastream.WindowedStream;
+import org.apache.flink.streaming.api.collector.selector.OutputSelector;
+import org.apache.flink.streaming.api.datastream.*;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.source.FileProcessingMode;
 import org.apache.flink.streaming.api.windowing.time.Time;
@@ -37,6 +35,7 @@ import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer;
 import org.apache.flink.util.Collector;
 import org.apache.kafka.common.protocol.types.Field;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Properties;
@@ -82,6 +81,22 @@ public class KafkaInputStreamingJob {
             }
         });
 
+        SplitStream spsm = fms.split(new OutputSelector<String>() {
+            @Override
+            public Iterable<String> select(String o) {
+                List<String> list  =new ArrayList<String>();
+                if (o.startsWith("kafka_"))
+                {
+                    list.add("kafka") ;
+                }
+                else{
+                    list.add("local") ;
+                }
+                return  list;
+            }
+        });
+        spsm.select("local").print();
+
 
 //        SingleOutputStreamOperator fms = ds.flatMap(
 //           ( o, collector) -> {
@@ -108,23 +123,23 @@ public class KafkaInputStreamingJob {
 
 //        fms.print();
 
-        SingleOutputStreamOperator ms = fms.map(new MapFunction<String,Tuple2<String,Integer>>() {
-            @Override
-            public Tuple2<String,Integer> map(String o) throws Exception {
-                return Tuple2.of(o,1);
-            }
-        });
-//        ms.print();
-        WindowedStream ws = ms.keyBy(0).timeWindow(Time.seconds(5));
-        SingleOutputStreamOperator sums =ws.reduce(new ReduceFunction<Tuple2<String,Integer>>() {
-            @Override
-            public Tuple2<String,Integer> reduce(Tuple2<String,Integer> o, Tuple2<String,Integer> t1) throws Exception {
-                return new Tuple2<String,Integer>(o.f0,(o.f1+t1.f1));
-            }
-        });
-
-//        SingleOutputStreamOperator sums =  ws.sum(1);
-        sums.print();
+//        SingleOutputStreamOperator ms = fms.map(new MapFunction<String,Tuple2<String,Integer>>() {
+//            @Override
+//            public Tuple2<String,Integer> map(String o) throws Exception {
+//                return Tuple2.of(o,1);
+//            }
+//        });
+////        ms.print();
+//        WindowedStream ws = ms.keyBy(0).timeWindow(Time.seconds(5));
+//        SingleOutputStreamOperator sums =ws.reduce(new ReduceFunction<Tuple2<String,Integer>>() {
+//            @Override
+//            public Tuple2<String,Integer> reduce(Tuple2<String,Integer> o, Tuple2<String,Integer> t1) throws Exception {
+//                return new Tuple2<String,Integer>(o.f0,(o.f1+t1.f1));
+//            }
+//        });
+//
+////        SingleOutputStreamOperator sums =  ws.sum(1);
+//        sums.print();
 
 		/*
 		 * Here, you can start creating your execution plan for Flink.
