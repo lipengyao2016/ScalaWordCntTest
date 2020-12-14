@@ -18,7 +18,7 @@
 
 package com.bigdata;
 
-import org.apache.flink.api.common.functions.FilterFunction;
+import com.bigdata.bean.WordCntResultDo;
 import org.apache.flink.api.common.functions.FlatMapFunction;
 import org.apache.flink.api.common.functions.MapFunction;
 import org.apache.flink.api.common.functions.ReduceFunction;
@@ -27,16 +27,21 @@ import org.apache.flink.api.java.io.TextInputFormat;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.core.fs.FileSystem;
 import org.apache.flink.core.fs.Path;
-import org.apache.flink.streaming.api.collector.selector.OutputSelector;
-import org.apache.flink.streaming.api.datastream.*;
+import org.apache.flink.streaming.api.datastream.DataStream;
+import org.apache.flink.streaming.api.datastream.DataStreamSource;
+import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
+import org.apache.flink.streaming.api.datastream.WindowedStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.source.FileProcessingMode;
 import org.apache.flink.streaming.api.windowing.time.Time;
 import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer;
+import org.apache.flink.streaming.connectors.kafka.FlinkKafkaProducer;
+import org.apache.flink.streaming.connectors.kafka.KafkaSerializationSchema;
 import org.apache.flink.util.Collector;
-import org.apache.kafka.common.protocol.types.Field;
+import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.kafka.clients.producer.ProducerRecord;
 
-import java.util.ArrayList;
+import javax.annotation.Nullable;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Properties;
@@ -53,25 +58,20 @@ import java.util.Properties;
  * <p>If you change the name of the main class (with the public static void main(String[] args))
  * method, change the respective entry in the POM.xml file (simply search for 'mainClass').
  */
-public class KafkaInputStreamingJob {
+public class KafkaSinkStreamingJob {
 
     protected static  List<String> wordList = Arrays.asList("Spark","Hadoop","Storm");
 
     private static final String KAFKA_TOPIC = "flinkKafka";
+    private static final String KAFKA_RESULT_TOPIC = "flink_result_kafka";
 	public static void main(String[] args) throws Exception {
 		// set up the streaming execution environment
 		final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
         Properties properties = new Properties();
         properties.put("bootstrap.servers","47.112.111.193:9092");
 
-
         DataStreamSource ds = env.addSource(new FlinkKafkaConsumer(KAFKA_TOPIC,new SimpleStringSchema(),properties));
-
-        String filePath = "E:\\data\\bigdata\\exec-log";
-        DataStreamSource ds_localFile = env.readFile(new TextInputFormat(new Path(filePath)),filePath, FileProcessingMode.PROCESS_ONCE,1);
-        DataStream ds2 = ds.union(ds,ds_localFile);
-
-        SingleOutputStreamOperator fms = ds2.flatMap(new FlatMapFunction<String,String>() {
+        SingleOutputStreamOperator fms = ds.flatMap(new FlatMapFunction<String,String>() {
             @Override
             public void flatMap(String o, Collector collector) throws Exception {
 //                System.out.println(" loop one line o:" + o);
@@ -131,18 +131,63 @@ public class KafkaInputStreamingJob {
             }
         });
 //        ms.print();
-        WindowedStream ws = ms.keyBy(0).timeWindow(Time.seconds(5));
+        WindowedStream ws = ms.keyBy(0).timeWindow(Time.seconds(2));
         SingleOutputStreamOperator sums =ws.reduce(new ReduceFunction<Tuple2<String,Integer>>() {
             @Override
             public Tuple2<String,Integer> reduce(Tuple2<String,Integer> o, Tuple2<String,Integer> t1) throws Exception {
                 return new Tuple2<String,Integer>(o.f0,(o.f1+t1.f1));
             }
         });
+        sums.print();
+
+        SingleOutputStreamOperator mysqlRs = sums.map(new MapFunction<Tuple2<String,Integer>, WordCntResultDo>() {
+
+            @Override
+            public WordCntResultDo map(Tuple2<String,Integer> o) throws Exception {
+
+                return new WordCntResultDo(o.f0,o.f1);
+            }
+        });
+        mysqlRs.print();
+
+        mysqlRs.addSink(new FlinkToMySqlResult());
+
+//        SingleOutputStreamOperator r2 = sums.map(new MapFunction<Tuple2<String,Integer>,String>() {
+//            @Override
+//            public String map(Tuple2<String,Integer> o) throws Exception {
+//                StringBuilder sb = new StringBuilder();
+//                sb.append(" key:" + o.f0);
+//                sb.append(" cnt:" + o.f1);
+//                return sb.toString();
+//            }
+//        });
+//
+//        r2.print();
+
+
+
+//        KafkaSerializationSchema<Tuple2<String,Integer>> kafkaSerializationSchema = new KafkaSerializationSchema<Tuple2<String,Integer>>() {
+//
+//            @Override
+//            public ProducerRecord<byte[], byte[]> serialize(Tuple2<String,Integer> o, @Nullable Long aLong) {
+//                StringBuilder sb = new StringBuilder();
+//                sb.append(" name:" + o.f0);
+//                sb.append(" value:" + o.f1);
+//                return new ProducerRecord<byte[], byte[]>(KAFKA_RESULT_TOPIC,o.f0.getBytes(),sb.toString().getBytes());
+//            }
+//
+//        };
+//
+//        FlinkKafkaProducer<byte[]> flinkKafkaProducer = new FlinkKafkaProducer(KAFKA_RESULT_TOPIC,kafkaSerializationSchema,properties,
+//               FlinkKafkaProducer.Semantic.EXACTLY_ONCE );
+//
+//        sums.addSink(flinkKafkaProducer);
+
 
 //        SingleOutputStreamOperator sums =  ws.sum(1);
 //        sums.print();
 
-        sums.writeAsText("E:\\data\\bigdata\\result.txt", FileSystem.WriteMode.OVERWRITE);
+
 
 		/*
 		 * Here, you can start creating your execution plan for Flink.
