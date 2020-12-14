@@ -131,7 +131,7 @@ public class KafkaSinkStreamingJob {
             }
         });
 //        ms.print();
-        WindowedStream ws = ms.keyBy(0).timeWindow(Time.seconds(2));
+        WindowedStream ws = ms.keyBy(0).timeWindow(Time.seconds(8));
         SingleOutputStreamOperator sums =ws.reduce(new ReduceFunction<Tuple2<String,Integer>>() {
             @Override
             public Tuple2<String,Integer> reduce(Tuple2<String,Integer> o, Tuple2<String,Integer> t1) throws Exception {
@@ -150,7 +150,9 @@ public class KafkaSinkStreamingJob {
         });
         mysqlRs.print();
 
-        mysqlRs.addSink(new FlinkToMySqlResult());
+//        mysqlRs.addSink(new FlinkToMySqlResult());
+
+        mysqlRs.addSink(new FlinkToRedisResult());
 
 //        SingleOutputStreamOperator r2 = sums.map(new MapFunction<Tuple2<String,Integer>,String>() {
 //            @Override
